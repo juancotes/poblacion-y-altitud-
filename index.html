@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Población sobre 500 m s. n. m. – Presentación interactiva</title>
+
+<!-- Librerías por CDN -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<style>
+  :root{
+    /* Paleta en verdes */
+    --bg:#06150f;            /* fondo general muy oscuro con tinte verde */
+    --panel:#0b2018;         /* panel */
+    --muted:#93b5a1;         /* texto atenuado */
+    --text:#eaf6f0;          /* texto principal */
+    --accent:#0a784f;        /* botón principal */
+    --accent-ink:#072f21;    /* texto sobre acento */
+    --accent-2:#0a5e41;      /* acento secundario (borde/tabs) */
+    --ok:#10b981;            /* verde ok */
+    --warn:#f59e0b;          /* ámbar */
+    --bad:#ef4444;           /* rojo */
+
+    --tab:#0d2019; 
+    --tabActive:#123227;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.45;
+  }
+  .wrap{max-width:1100px; margin:0 auto; padding:28px 20px;}
+  header{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0 14px 0;}
+  h1{font-size:1.25rem; margin:0; font-weight:800; letter-spacing:.2px}
+  .pill{display:inline-flex; align-items:center; gap:10px; background:#0c2b21; border:1px solid rgba(255,255,255,.06); border-radius:999px; padding:8px 12px; color:var(--muted)}
+  .card{
+    background:var(--panel); border:1px solid rgba(255,255,255,.06);
+    border-radius:18px; padding:22px; box-shadow:0 10px 30px rgba(0,0,0,.28);
+  }
+
+  /* Pasos */
+  .step{display:none; animation:fade .3s ease}
+  .step.active{display:block}
+  @keyframes fade{from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:none}}
+
+  /* Sección hero para preguntas (usa más pantalla) */
+  .hero{
+    min-height:65vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:28px 12px;
+  }
+  .prompt{
+    font-size:clamp(1.3rem, 2.6vw, 2rem);
+    font-weight:800; line-height:1.2; margin:0 0 18px 0;
+  }
+  .sub{
+    font-size:clamp(.95rem, 1.4vw, 1.05rem); color:var(--muted); margin:0 0 18px 0;
+  }
+  .field{display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap}
+  input[type="text"]{
+    width:min(320px, 80vw); padding:12px 14px; border-radius:12px; border:1px solid rgba(255,255,255,.14);
+    background:#0d241c; color:var(--text); outline:none; font-size:1.05rem;
+  }
+  .hint{font-size:.95rem; color:var(--muted); margin-top:10px}
+  .err{color:var(--bad); font-size:.95rem; margin-top:6px; display:none}
+  .err.show{display:block}
+
+  .btn{
+    background:var(--accent); color:#eafff6; border:0; border-radius:12px; padding:12px 18px; font-weight:800; cursor:pointer;
+    transition:transform .06s ease, filter .2s ease; box-shadow:0 6px 22px rgba(10,120,79,.35);
+  }
+  .btn:active{transform:translateY(1px)}
+  .btn.sec{background:transparent; color:var(--text); border:1px solid rgba(255,255,255,.16)}
+  .right{display:flex; gap:10px; justify-content:flex-end}
+
+  /* Tabs resultados */
+  .tabs{display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap}
+  .tab{
+    border:1px solid var(--accent-2); background:var(--tab); color:var(--text);
+    padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:700;
+  }
+  .tab.active{background:var(--tabActive)}
+  .tabpanes > div{display:none}
+  .tabpanes > div.active{display:block}
+
+  .grid{display:grid; gap:18px}
+  @media(min-width:800px){ .grid.two{grid-template-columns:1fr 1fr} }
+
+  .stat{font-size:2rem; font-weight:900}
+  .small{font-size:.95rem; color:var(--muted)}
+  .delta.good{color:var(--ok)} .delta.mid{color:var(--warn)} .delta.bad{color:var(--bad)}
+
+  footer{margin-top:18px; color:var(--muted); font-size:.95rem}
+  a{color:#8ae6bf}
+
+  /* Toast genérico */
+  .toast{
+    position:fixed; left:50%; top:18px; transform:translateX(-50%);
+    background:#0f2b22; color:#d9fff0; border:1px solid #1e4d3f; padding:10px 14px; border-radius:10px;
+    box-shadow:0 6px 20px rgba(0,0,0,.25); z-index:1000; display:none;
+  }
+  .toast.show{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Población que vive por encima de 500 m s. n. m.</h1>
+    <span class="pill">Interacción guiada</span>
+  </header>
+
+  <!-- Paso 1 -->
+  <div class="card step active" id="step-1">
+    <div class="hero">
+      <p class="prompt">¿Qué porcentaje de la población de <strong>Colombia</strong> vive por encima de los <strong>500 m</strong> s. n. m.?</p>
+      <p class="sub">Escribe tu estimación (solo número). Luego pasamos a tu estimación para el mundo.</p>
+      <div class="field">
+        <input id="guess-col" type="text" inputmode="decimal" placeholder="Ej: 65.5" aria-label="Estimación Colombia" />
+        <button class="btn" id="next-1">Siguiente</button>
+      </div>
+      <div class="hint">Puedes usar coma o punto.</div>
+      <div class="err" id="err-1">Introduce un valor entre 0 y 100.</div>
+    </div>
+  </div>
+
+  <!-- Paso 2 -->
+  <div class="card step" id="step-2">
+    <div class="hero">
+      <p class="prompt">¿Qué porcentaje de la población del <strong>mundo</strong> vive por encima de los <strong>500 m</strong>?</p>
+      <p class="sub">Después verás qué tan cerca estuviste.</p>
+      <div class="field">
+        <input id="guess-world" type="text" inputmode="decimal" placeholder="Ej: 30" aria-label="Estimación Mundo" />
+        <button class="btn" id="next-2">Ver resultados</button>
+      </div>
+      <div class="hint">Solo números del 0 al 100.</div>
+      <div class="err" id="err-2">Introduce un valor entre 0 y 100.</div>
+    </div>
+  </div>
+
+  <!-- Paso 3: Resultados -->
+  <div class="card step" id="step-3">
+    <div class="tabs">
+      <button class="tab active" data-target="pane-col">Colombia</button>
+      <button class="tab" data-target="pane-world">Mundo</button>
+    </div>
+    <div class="tabpanes">
+      <div id="pane-col" class="active">
+        <div class="grid two">
+          <div>
+            <p class="small">Tu estimación</p>
+            <div class="stat" id="you-col">—</div>
+          </div>
+          <div>
+            <p class="small">Valor real (PNAS)</p>
+            <div class="stat" id="real-col">—</div>
+          </div>
+        </div>
+        <p style="margin-top:10px;">Estuviste <span id="delta-col" class="delta">—</span> puntos porcentuales de distancia. <strong id="verdict-col"></strong></p>
+      </div>
+      <div id="pane-world">
+        <div class="grid two">
+          <div>
+            <p class="small">Tu estimación</p>
+            <div class="stat" id="you-world">—</div>
+          </div>
+          <div>
+            <p class="small">Valor real (PNAS)</p>
+            <div class="stat" id="real-world">—</div>
+          </div>
+        </div>
+        <p style="margin-top:10px;">Estuviste <span id="delta-world" class="delta">—</span> puntos porcentuales de distancia. <strong id="verdict-world"></strong></p>
+      </div>
+    </div>
+    <div class="right" style="margin-top:12px;">
+      <button class="btn sec" id="back-3">Volver</button>
+      <button class="btn" id="next-3">Ver gráfico</button>
+    </div>
+  </div>
+
+  <!-- Paso 4: Gráfico -->
+  <div class="card step" id="step-4">
+    <p class="prompt" style="text-align:left; font-size:1.2rem">Países con mayor % de población sobre 500 m (Top-10) + Colombia</p>
+    <canvas id="barChart" height="130"></canvas>
+
+    <footer>
+      Realizado con los datos de: Tremblay, J. C., &amp; Ainslie, P. N. (2021). <em>Global and country-level estimates of human population at high altitude.</em> <strong>PNAS</strong>, 118(18).
+      <a href="https://doi.org/10.1073/pnas.2102463118" target="_blank" rel="noopener">https://doi.org/10.1073/pnas.2102463118</a>.
+    </footer>
+    <div class="right" style="margin-top:12px">
+      <button class="btn sec" id="back-4">Volver</button>
+      <button class="btn" id="restart">Reiniciar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">Error en cargar los datos</div>
+
+<script>
+/* ---------- Utilidades ---------- */
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+
+function showStep(n){
+  $$('.step').forEach(el => el.classList.remove('active'));
+  $('#step-' + n).classList.add('active');
+}
+
+function toNumber(val){
+  if(val == null) return null;
+  const v = String(val).replace('%','').trim().replace(',', '.');
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function fmtPct(x){
+  return (Math.round(x * 100) / 100).toFixed(2) + '%';
+}
+
+function verdict(diff){
+  if(diff <= 2) return {text:'¡Muy cerca!', cls:'good'};
+  if(diff <= 5) return {text:'Aproximación razonable.', cls:'mid'};
+  return {text:'Lejos del valor real.', cls:'bad'};
+}
+
+function showToast(msg='Error en cargar los datos', ms=2500){
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=> t.classList.remove('show'), ms);
+}
+
+/* ---------- Estado de datos ---------- */
+let DATA = {
+  countries: [], // {country, pctAbove500}
+  colombia: null,
+  world: null
+};
+let DATA_READY = false;
+
+/* ---------- Carga de Excel (asíncrona) ---------- */
+async function loadExcel(){
+  try{
+    const url = 'pnas.2102463118.sd01.with_global.xlsx';
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('http ' + res.status);
+    const ab = await res.arrayBuffer();
+    const wb = XLSX.read(ab, {type:'array'});
+
+    const sheetOriginal = wb.Sheets['Original'];
+    const sheetGlobal = wb.Sheets['GlobalAggregate'];
+    if(!sheetOriginal || !sheetGlobal) throw new Error('sheets');
+
+    const rowsOriginal = XLSX.utils.sheet_to_json(sheetOriginal, {defval:null});
+    const rowsGlobal   = XLSX.utils.sheet_to_json(sheetGlobal, {defval:null});
+
+    const keyCountry = Object.keys(rowsOriginal[0]).find(k => String(k).trim().toLowerCase() === 'country');
+    // Buscar con tolerancia "% < 500m" (espacios y encoding)
+    const keyPctLt500 = Object.keys(rowsOriginal[0]).find(k => String(k).trim().toLowerCase().replace(/\s+/g,' ') === '% < 500m');
+    if(!keyCountry || !keyPctLt500) throw new Error('columns');
+
+    const countries = rowsOriginal.map(r => {
+      const name = (r[keyCountry] ?? '').toString().trim();
+      const pctLt500 = toNumber(r[keyPctLt500]);
+      if(!name || pctLt500 == null) return null;
+      return { country: name, pctAbove500: 100 - pctLt500 };
+    }).filter(Boolean);
+
+    const col = countries.find(c => c.country.toLowerCase() === 'colombia');
+    const colombia = col ? col.pctAbove500 : null;
+
+    const ga = rowsGlobal[0] || {};
+    const gaKey = Object.keys(ga).find(k => String(k).trim().toLowerCase().replace(/\s+/g,' ') === '% < 500m');
+    const world = gaKey != null ? (100 - toNumber(ga[gaKey])) : null;
+
+    DATA.countries = countries;
+    DATA.colombia = colombia;
+    DATA.world = world;
+    DATA_READY = true;
+  }catch(e){
+    console.error(e);
+    DATA_READY = false;
+  }
+}
+
+/* ---------- Tabs ---------- */
+function initTabs(){
+  $$('.tab').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      $$('.tab').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      const tgt = btn.getAttribute('data-target');
+      $$('.tabpanes > div').forEach(p=>p.classList.remove('active'));
+      $('#'+tgt).classList.add('active');
+    });
+  });
+}
+
+/* ---------- Gráfico ---------- */
+let chartInstance = null;
+function drawChart(){
+  const sorted = [...DATA.countries].sort((a,b)=>b.pctAbove500 - a.pctAbove500);
+  const top10 = sorted.slice(0,10);
+
+  let bars = [...top10];
+  const colObj = DATA.countries.find(d => d.country.toLowerCase() === 'colombia');
+  if(colObj && !top10.some(d => d.country.toLowerCase() === 'colombia')){
+    bars.push(colObj);
+  }
+
+  // Evitar duplicados por si Colombia ya estaba
+  const seen = new Set();
+  bars = bars.filter(b => (seen.has(b.country) ? false : (seen.add(b.country), true)));
+
+  const labels = bars.map(d => d.country);
+  const data   = bars.map(d => +(d.pctAbove500.toFixed(2)));
+
+  // Tonos verdes
+  const bg = bars.map(d => d.country.toLowerCase()==='colombia' ? 'rgba(16,185,129,0.95)' : 'rgba(10,120,79,0.9)');
+  const border = bars.map(d => d.country.toLowerCase()==='colombia' ? 'rgba(16,185,129,1)' : 'rgba(10,120,79,1)');
+
+  const ctx = document.getElementById('barChart').getContext('2d');
+  if(chartInstance){ chartInstance.destroy(); }
+
+  chartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: '% sobre 500 m',
+        data,
+        backgroundColor: bg,
+        borderColor: border,
+        borderWidth: 1.2
+      }]
+    },
+    options: {
+      responsive:true,
+      scales:{
+        y:{ beginAtZero:true, max:100, title:{display:true, text:'% de población sobre 500 m s. n. m.'} },
+        x:{ ticks:{autoSkip:false, maxRotation:45, minRotation:0} }
+      },
+      plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:(ctx)=> `${ctx.raw}%` } } }
+    }
+  });
+}
+
+/* ---------- Interacción ---------- */
+function ready(){
+  initTabs();
+
+  const colInput = $('#guess-col');
+  const worldInput = $('#guess-world');
+
+  // Botón paso 1: siempre clicable; validación al hacer click
+  $('#next-1').addEventListener('click', ()=>{
+    const n = toNumber(colInput.value);
+    if(n == null || n < 0 || n > 100){
+      $('#err-1').classList.add('show');
+      return;
+    }
+    $('#err-1').classList.remove('show');
+    showStep(2);
+  });
+
+  // Botón paso 2: validación y resultados
+  $('#next-2').addEventListener('click', ()=>{
+    const n = toNumber(worldInput.value);
+    if(n == null || n < 0 || n > 100){
+      $('#err-2').classList.add('show');
+      return;
+    }
+    $('#err-2').classList.remove('show');
+
+    if(!DATA_READY){
+      // Datos no disponibles → error genérico
+      showToast('Error en cargar los datos');
+      return;
+    }
+
+    // Rellenar resultados
+    const youCol = toNumber(colInput.value);
+    const youWorld = n;
+
+    const cReal = DATA.colombia;
+    const wReal = DATA.world;
+
+    $('#you-col').textContent = youCol != null ? fmtPct(youCol) : '—';
+    $('#real-col').textContent = cReal != null ? fmtPct(cReal) : '—';
+
+    $('#you-world').textContent = fmtPct(youWorld);
+    $('#real-world').textContent = wReal != null ? fmtPct(wReal) : '—';
+
+    const dCol = (youCol != null && cReal != null) ? Math.abs(youCol - cReal) : NaN;
+    const dWorld = (wReal != null) ? Math.abs(youWorld - wReal) : NaN;
+
+    if(!Number.isNaN(dCol)){
+      const v1 = verdict(dCol);
+      const el = $('#delta-col'); el.textContent = dCol.toFixed(2); el.className = 'delta ' + v1.cls;
+      $('#verdict-col').textContent = v1.text;
+    }else{
+      $('#delta-col').textContent = '—'; $('#verdict-col').textContent = '';
+    }
+
+    if(!Number.isNaN(dWorld)){
+      const v2 = verdict(dWorld);
+      const el = $('#delta-world'); el.textContent = dWorld.toFixed(2); el.className = 'delta ' + v2.cls;
+      $('#verdict-world').textContent = v2.text;
+    }else{
+      $('#delta-world').textContent = '—'; $('#verdict-world').textContent = '';
+    }
+
+    showStep(3);
+  });
+
+  $('#back-3').addEventListener('click', ()=> showStep(2));
+
+  $('#next-3').addEventListener('click', ()=>{
+    if(!DATA_READY){ showToast('Error en cargar los datos'); return; }
+    drawChart(); showStep(4);
+  });
+
+  $('#back-4').addEventListener('click', ()=> showStep(3));
+
+  $('#restart').addEventListener('click', ()=>{
+    $('#guess-col').value = '';
+    $('#guess-world').value = '';
+    $('#err-1').classList.remove('show');
+    $('#err-2').classList.remove('show');
+    showStep(1);
+  });
+}
+
+/* ---------- Inicio ---------- */
+window.addEventListener('DOMContentLoaded', ()=>{
+  ready();         // Vincula la UI inmediatamente
+  loadExcel();     // Carga datos en segundo plano; si falla, se muestra toast genérico al usarlos
+});
+</script>
+</body>
+</html>
