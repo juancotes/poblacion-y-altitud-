@@ -117,7 +117,7 @@
       <p class="prompt">¿Qué porcentaje de la población de <strong>Colombia</strong> vive por encima de los <strong>500 m</strong> s. n. m.?</p>
       <p class="sub">Escribe tu estimación (solo número). Luego pasamos a tu estimación para el mundo.</p>
       <div class="field">
-        <input id="guess-col" type="text" inputmode="decimal" placeholder="Ej: 65.5" aria-label="Estimación Colombia" />
+        <input id="guess-col" type="text" inputmode="decimal" placeholder="Ej: 20" aria-label="Estimación Colombia" />
         <button class="btn" id="next-1">Siguiente</button>
       </div>
       <div class="hint">Puedes usar coma o punto.</div>
@@ -131,7 +131,7 @@
       <p class="prompt">¿Qué porcentaje de la población del <strong>mundo</strong> vive por encima de los <strong>500 m</strong>?</p>
       <p class="sub">Después verás qué tan cerca estuviste.</p>
       <div class="field">
-        <input id="guess-world" type="text" inputmode="decimal" placeholder="Ej: 30" aria-label="Estimación Mundo" />
+        <input id="guess-world" type="text" inputmode="decimal" placeholder="Ej: 20" aria-label="Estimación Mundo" />
         <button class="btn" id="next-2">Ver resultados</button>
       </div>
       <div class="hint">Solo números del 0 al 100.</div>
@@ -301,11 +301,11 @@ function initTabs(){
 let chartInstance = null;
 function drawChart(){
   const sorted = [...DATA.countries].sort((a,b)=>b.pctAbove500 - a.pctAbove500);
-  const top10 = sorted.slice(0,10);
+  const top50 = sorted.slice(0,50);
 
-  let bars = [...top10];
+  let bars = [...top50];
   const colObj = DATA.countries.find(d => d.country.toLowerCase() === 'colombia');
-  if(colObj && !top10.some(d => d.country.toLowerCase() === 'colombia')){
+  if(colObj && !top50.some(d => d.country.toLowerCase() === 'colombia')){
     bars.push(colObj);
   }
 
@@ -440,3 +440,4 @@ window.addEventListener('DOMContentLoaded', ()=>{
 </script>
 </body>
 </html>
+
