@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!DOCTYPE html> 
 <html lang="es">
 <head>
 <meta charset="utf-8" />
@@ -179,10 +179,13 @@
     </div>
   </div>
 
-  <!-- Paso 4: Gráfico -->
+  <!-- Paso 4: Gráficos -->
   <div class="card step" id="step-4">
-    <p class="prompt" style="text-align:left; font-size:1.2rem">Países con mayor % de población sobre 500 m.s.n.m. (Top 50) + Colombia</p>
+    <p class="prompt" style="text-align:left; font-size:1.2rem">Países con mayor % de población sobre 500 m s. n. m. (Top 50) + Colombia</p>
     <canvas id="barChart" height="130"></canvas>
+
+    <p class="prompt" style="text-align:left; font-size:1.2rem; margin-top:28px;">Países con mayor % de población sobre 1500 m s. n. m. (Top 50) + Colombia</p>
+    <canvas id="barChart1500" height="130"></canvas>
 
     <footer>
       Realizado con los datos de: Tremblay, J. C., &amp; Ainslie, P. N. (2021). <em>Global and country-level estimates of human population at high altitude.</em> <strong>PNAS</strong>, 118(18).
@@ -231,11 +234,40 @@ function showToast(msg='Error en cargar los datos', ms=2500){
   setTimeout(()=> t.classList.remove('show'), ms);
 }
 
+/* Normalizador de claves de encabezado (robusto a guiones/espacios/comas) */
+function normKey(s){
+  return String(s)
+    .toLowerCase()
+    .replace(/\s+/g,'')
+    .replace(/[–—−]/g,'-')
+    .replace(/,/g,'')
+    .replace(/\./g,'')
+    .replace(/≥/g,'>=')
+    .replace(/%/g,'pct');
+}
+function findKeyLike(obj, candidates){
+  const keys = Object.keys(obj || {});
+  const map = new Map(keys.map(k => [normKey(k), k]));
+  for(const cand of candidates){
+    const nk = normKey(cand);
+    if(map.has(nk)) return map.get(nk);
+  }
+  // fallback: contiene
+  for(const k of keys){
+    const nk = normKey(k);
+    if(candidates.some(c => nk.includes(normKey(c)))) return k;
+  }
+  return null;
+}
+
 /* ---------- Estado de datos ---------- */
 let DATA = {
-  countries: [], // {country, pctAbove500}
+  countries: [],      // {country, pctAbove500}
+  countries1500: [],  // {country, pctAbove1500}
   colombia: null,
-  world: null
+  colombia1500: null,
+  world: null,
+  world1500: null
 };
 let DATA_READY = false;
 
@@ -255,28 +287,73 @@ async function loadExcel(){
     const rowsOriginal = XLSX.utils.sheet_to_json(sheetOriginal, {defval:null});
     const rowsGlobal   = XLSX.utils.sheet_to_json(sheetGlobal, {defval:null});
 
-    const keyCountry = Object.keys(rowsOriginal[0]).find(k => String(k).trim().toLowerCase() === 'country');
-    // Buscar con tolerancia "% < 500m" (espacios y encoding)
-    const keyPctLt500 = Object.keys(rowsOriginal[0]).find(k => String(k).trim().toLowerCase().replace(/\s+/g,' ') === '% < 500m');
-    if(!keyCountry || !keyPctLt500) throw new Error('columns');
+    // Detectar claves con tolerancia
+    const sample = rowsOriginal[0] || {};
+    const keyCountry = findKeyLike(sample, ['country','Country']);
 
-    const countries = rowsOriginal.map(r => {
+    const keyLt500 = findKeyLike(sample, ['% < 500m','%<500m','pct<500m']);
+    const key500_1499 = findKeyLike(sample, ['% 500-1499m','%500-1499m','% 500–1499m','%500–1499m','%500-1499 m']);
+    const key1500_2999 = findKeyLike(sample, ['% 1500-2999m','%1500-2999m','% 1500–2999m','%1500–2999m']);
+    const keyGE3000 = findKeyLike(sample, ['% >=3000m','%≥3000m','% >= 3000 m','% 3000+m']);
+
+    if(!keyCountry || !keyLt500) throw new Error('columns');
+
+    const countries = [];
+    const countries1500 = [];
+
+    for(const r of rowsOriginal){
       const name = (r[keyCountry] ?? '').toString().trim();
-      const pctLt500 = toNumber(r[keyPctLt500]);
-      if(!name || pctLt500 == null) return null;
-      return { country: name, pctAbove500: 100 - pctLt500 };
-    }).filter(Boolean);
+      if(!name) continue;
 
-    const col = countries.find(c => c.country.toLowerCase() === 'colombia');
-    const colombia = col ? col.pctAbove500 : null;
+      const lt500 = toNumber(r[keyLt500]); // requerido para >500
+      const pctAbove500 = (lt500 == null) ? null : (100 - lt500);
 
-    const ga = rowsGlobal[0] || {};
-    const gaKey = Object.keys(ga).find(k => String(k).trim().toLowerCase().replace(/\s+/g,' ') === '% < 500m');
-    const world = gaKey != null ? (100 - toNumber(ga[gaKey])) : null;
+      // Cálculo preferido: 100 − (<500 + 500–1499)
+      const band500_1499 = key500_1499 ? toNumber(r[key500_1499]) : null;
+      let pctAbove1500 = null;
+      if(lt500 != null && band500_1499 != null){
+        pctAbove1500 = 100 - (lt500 + band500_1499);
+      }else{
+        // Alternativa: sumar 1500–2999 + ≥3000
+        const b1500_2999 = key1500_2999 ? toNumber(r[key1500_2999]) : null;
+        const bGE3000    = keyGE3000 ? toNumber(r[keyGE3000]) : null;
+        if(b1500_2999 != null && bGE3000 != null){
+          pctAbove1500 = b1500_2999 + bGE3000;
+        }
+      }
+
+      if(pctAbove500 != null) countries.push({ country: name, pctAbove500 });
+      if(pctAbove1500 != null) countries1500.push({ country: name, pctAbove1500 });
+    }
+
+    // Colombia
+    const col500 = countries.find(c => c.country.toLowerCase() === 'colombia');
+    const col1500 = countries1500.find(c => c.country.toLowerCase() === 'colombia');
+
+    // Global
+    const g = rowsGlobal[0] || {};
+    const gLt500 = findKeyLike(g, ['% < 500m','%<500m','pct<500m']);
+    const gw = gLt500 != null ? (100 - toNumber(g[gLt500])) : null;
+
+    let gw1500 = null;
+    const g500_1499 = findKeyLike(g, ['% 500-1499m','%500-1499m','% 500–1499m','%500–1499m','%500-1499 m']);
+    if(gLt500 && g500_1499){
+      gw1500 = 100 - (toNumber(g[gLt500]) + toNumber(g[g500_1499]));
+    }else{
+      const g1500_2999 = findKeyLike(g, ['% 1500-2999m','%1500-2999m','% 1500–2999m','%1500–2999m']);
+      const gGE3000    = findKeyLike(g, ['% >=3000m','%≥3000m','% >= 3000 m','% 3000+m']);
+      if(g1500_2999 && gGE3000){
+        gw1500 = toNumber(g[g1500_2999]) + toNumber(g[gGE3000]);
+      }
+    }
 
     DATA.countries = countries;
-    DATA.colombia = colombia;
-    DATA.world = world;
+    DATA.countries1500 = countries1500;
+    DATA.colombia = col500 ? col500.pctAbove500 : null;
+    DATA.colombia1500 = col1500 ? col1500.pctAbove1500 : null;
+    DATA.world = gw;
+    DATA.world1500 = gw1500;
+
     DATA_READY = true;
   }catch(e){
     console.error(e);
@@ -297,9 +374,12 @@ function initTabs(){
   });
 }
 
-/* ---------- Gráfico ---------- */
+/* ---------- Gráficos ---------- */
 let chartInstance = null;
+let chartInstance1500 = null;
+
 function drawChart(){
+  // 500 m
   const sorted = [...DATA.countries].sort((a,b)=>b.pctAbove500 - a.pctAbove500);
   const top50 = sorted.slice(0,50);
 
@@ -309,14 +389,12 @@ function drawChart(){
     bars.push(colObj);
   }
 
-  // Evitar duplicados por si Colombia ya estaba
   const seen = new Set();
   bars = bars.filter(b => (seen.has(b.country) ? false : (seen.add(b.country), true)));
 
   const labels = bars.map(d => d.country);
   const data   = bars.map(d => +(d.pctAbove500.toFixed(2)));
 
-  // Tonos verdes
   const bg = bars.map(d => d.country.toLowerCase()==='colombia' ? 'rgba(16,185,129,0.95)' : 'rgba(10,120,79,0.9)');
   const border = bars.map(d => d.country.toLowerCase()==='colombia' ? 'rgba(16,185,129,1)' : 'rgba(10,120,79,1)');
 
@@ -339,6 +417,53 @@ function drawChart(){
       responsive:true,
       scales:{
         y:{ beginAtZero:true, max:100, title:{display:true, text:'% de población sobre 500 m s. n. m.'} },
+        x:{ ticks:{autoSkip:false, maxRotation:45, minRotation:0} }
+      },
+      plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:(ctx)=> `${ctx.raw}%` } } }
+    }
+  });
+}
+
+function drawChart1500(){
+  if(!DATA.countries1500.length) return;
+
+  const sorted = [...DATA.countries1500].sort((a,b)=>b.pctAbove1500 - a.pctAbove1500);
+  const top50 = sorted.slice(0,50);
+
+  let bars = [...top50];
+  const colObj = DATA.countries1500.find(d => d.country.toLowerCase() === 'colombia');
+  if(colObj && !top50.some(d => d.country.toLowerCase() === 'colombia')){
+    bars.push(colObj);
+  }
+
+  const seen = new Set();
+  bars = bars.filter(b => (seen.has(b.country) ? false : (seen.add(b.country), true)));
+
+  const labels = bars.map(d => d.country);
+  const data   = bars.map(d => +(d.pctAbove1500.toFixed(2)));
+
+  const bg = bars.map(d => d.country.toLowerCase()==='colombia' ? 'rgba(16,185,129,0.95)' : 'rgba(10,120,79,0.9)');
+  const border = bars.map(d => d.country.toLowerCase()==='colombia' ? 'rgba(16,185,129,1)' : 'rgba(10,120,79,1)');
+
+  const ctx = document.getElementById('barChart1500').getContext('2d');
+  if(chartInstance1500){ chartInstance1500.destroy(); }
+
+  chartInstance1500 = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: '% sobre 1500 m',
+        data,
+        backgroundColor: bg,
+        borderColor: border,
+        borderWidth: 1.2
+      }]
+    },
+    options: {
+      responsive:true,
+      scales:{
+        y:{ beginAtZero:true, max:100, title:{display:true, text:'% de población sobre 1500 m s. n. m.'} },
         x:{ ticks:{autoSkip:false, maxRotation:45, minRotation:0} }
       },
       plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:(ctx)=> `${ctx.raw}%` } } }
@@ -418,7 +543,10 @@ function ready(){
 
   $('#next-3').addEventListener('click', ()=>{
     if(!DATA_READY){ showToast('Error en cargar los datos'); return; }
-    drawChart(); showStep(4);
+    // Dibujar ambos gráficos (500 m y 1500 m)
+    drawChart();
+    drawChart1500();
+    showStep(4);
   });
 
   $('#back-4').addEventListener('click', ()=> showStep(3));
@@ -440,5 +568,3 @@ window.addEventListener('DOMContentLoaded', ()=>{
 </script>
 </body>
 </html>
-
-
