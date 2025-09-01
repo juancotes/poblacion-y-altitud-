@@ -295,6 +295,9 @@ async function loadExcel(){
     const key500_1499 = findKeyLike(sample, ['% 500-1499m','%500-1499m','% 500–1499m','%500–1499m','%500-1499 m']);
     const key1500_2999 = findKeyLike(sample, ['% 1500-2999m','%1500-2999m','% 1500–2999m','%1500–2999m']);
     const keyGE3000 = findKeyLike(sample, ['% >=3000m','%≥3000m','% >= 3000 m','% 3000+m']);
+    const key500_999   = findKeyLike(sample, ['% 500-999m','%500-999m','% 500–999m','%500–999m','%500-999 m']);
+    const key1000_1499 = findKeyLike(sample, ['% 1000-1499m','%1000-1499m','% 1000–1499m','%1000–1499m','%1000-1499 m']);
+
 
     if(!keyCountry || !keyLt500) throw new Error('columns');
 
@@ -335,19 +338,24 @@ async function loadExcel(){
     const gLt500 = findKeyLike(g, ['% < 500m','%<500m','pct<500m']);
     const gw = gLt500 != null ? (100 - toNumber(g[gLt500])) : null;
 
-    let gw1500 = null;
-    const g500_1499 = findKeyLike(g, ['% 500-1499m','%500-1499m','% 500–1499m','%500–1499m','%500-1499 m']);
-    if(gLt500 && g500_1499){
-      gw1500 = 100 - (toNumber(g[gLt500]) + toNumber(g[g500_1499]));
-    }else{
-      const g1500_2999 = findKeyLike(g, ['% 1500-2999m','%1500-2999m','% 1500–2999m','%1500–2999m']);
-      const gGE3000    = findKeyLike(g, ['% >=3000m','%≥3000m','% >= 3000 m','% 3000+m']);
-      if(g1500_2999 && gGE3000){
-        gw1500 = toNumber(g[g1500_2999]) + toNumber(g[gGE3000]);
-      }
-    }
-
-    DATA.countries = countries;
+    
+let gw1500 = null;
+// Preferir cálculo con bandas separadas
+const g500_999   = findKeyLike(g, ['% 500-999m','%500-999m','% 500–999m','%500–999m','%500-999 m']);
+const g1000_1499 = findKeyLike(g, ['% 1000-1499m','%1000-1499m','% 1000–1499m','%1000–1499m','%1000-1499 m']);
+const g500_1499  = findKeyLike(g, ['% 500-1499m','%500-1499m','% 500–1499m','%500–1499m','%500-1499 m']);
+if(gLt500 && g500_999 && g1000_1499){
+  gw1500 = 100 - (toNumber(g[gLt500]) + toNumber(g[g500_999]) + toNumber(g[g1000_1499]));
+}else if(gLt500 && g500_1499){
+  gw1500 = 100 - (toNumber(g[gLt500]) + toNumber(g[g500_1499]));
+}else{
+  const g1500_2999 = findKeyLike(g, ['% 1500-2999m','%1500-2999m','% 1500–2999m','%1500–2999m']);
+  const gGE3000    = findKeyLike(g, ['% >=3000m','%≥3000m','% >= 3000 m','% 3000+m']);
+  if(g1500_2999 && gGE3000){
+    gw1500 = toNumber(g[g1500_2999]) + toNumber(g[gGE3000]);
+  }
+}
+DATA.countries = countries;
     DATA.countries1500 = countries1500;
     DATA.colombia = col500 ? col500.pctAbove500 : null;
     DATA.colombia1500 = col1500 ? col1500.pctAbove1500 : null;
